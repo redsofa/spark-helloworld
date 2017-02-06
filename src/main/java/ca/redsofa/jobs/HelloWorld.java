@@ -5,9 +5,25 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import java.util.Arrays;
 import org.apache.spark.sql.Encoders;
+import org.apache.spark.sql.api.java.UDF1;
+import org.apache.spark.sql.types.DataTypes;
+import static org.apache.spark.sql.functions.callUDF;
 
 public class HelloWorld {
-    private static String INPUT_FILE = "/Users/richardr/Documents/data/inputdata.txt";
+    private static String INPUT_FILE = "/home/richardr/Documents/data/inputdata.txt";
+
+    public static void registerStringLengthUdf(SparkSession spark){
+        spark.udf().register("stringLengthUdf", new UDF1<String, Long>() {
+          @Override
+          public Long call(String str) { 
+              if(str != null && !str.isEmpty()){
+                return new Long(str.length());  
+              }else{
+                return 0L;
+              }
+            }
+        }, DataTypes.LongType);
+    }
 
     public static void main(String[] args) {
         HelloWorld job = new HelloWorld();
@@ -62,10 +78,31 @@ public class HelloWorld {
         //6 - Show contents of the Dataset
         wordCount.show(10);
 
-        //7 - Stop Spark context
+
+        //7 - Register user defined function (UDF)
+        registerStringLengthUdf(spark);
+        wordCount.createOrReplaceTempView("word_counts");
+
+        //8 - Call UDF from a SQL statement. 
+        //    Note : This UDF could be called from R, Python, Java and Scala code
+        sql = "SELECT *, stringLengthUdf(word) as my_UDF_str_length FROM word_counts";
+
+        Dataset <Row> wordCountWithLengths = spark.sql(sql);
+        wordCountWithLengths.show(10);
+
+
+        //9 - Call UDF (again) but now by using the withColumn method
+        Dataset <Row> withColumnDs = wordCount
+                                        .withColumn("my_UDF_str_len",
+                                          callUDF("stringLengthUdf", wordCount.col("word"))
+                                        );
+
+        withColumnDs.show(10);
+
+        //10 - Stop Spark context
         spark.stop();
 
-        //8 - Show execution time info...
+        //11 - Show execution time info...
         long stopTime = System.currentTimeMillis();
         long elapsedTime = stopTime - startTime;
         System.out.println("Execution time in ms : " + elapsedTime);
